@@ -47,8 +47,7 @@ def residual_block(input_layer, input_channel, filter_num1, filter_num2, activat
     conv = convolutional(input_layer, filters_shape=(1, 1, input_channel, filter_num1), activate_type=activate_type)
     conv = convolutional(conv       , filters_shape=(3, 3, filter_num1,   filter_num2), activate_type=activate_type)
 
-    residual_output = short_cut + conv
-    return residual_output
+    return short_cut + conv
 
 # def block_tiny(input_layer, input_channel, filter_num1, activate_type='leaky'):
 #     conv = convolutional(input_layer, filters_shape=(3, 3, input_channel, filter_num1), activate_type=activate_type)

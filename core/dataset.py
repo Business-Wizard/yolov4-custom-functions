@@ -54,7 +54,7 @@ class Dataset(object):
                 for line in txt:
                     image_path = line.strip()
                     root, _ = os.path.splitext(image_path)
-                    with open(root + ".txt") as fd:
+                    with open(f'{root}.txt') as fd:
                         boxes = fd.readlines()
                         string = ""
                         for box in boxes:
@@ -137,8 +137,8 @@ class Dataset(object):
                 (self.batch_size, self.max_bbox_per_scale, 4), dtype=np.float32
             )
 
-            num = 0
             if self.batch_count < self.num_batchs:
+                num = 0
                 while num < self.batch_size:
                     index = self.batch_count * self.batch_size + num
                     if index >= self.num_samples:
@@ -302,6 +302,7 @@ class Dataset(object):
         bboxes_xywh = [np.zeros((self.max_bbox_per_scale, 4)) for _ in range(3)]
         bbox_count = np.zeros((3,))
 
+        deta = 0.01
         for bbox in bboxes:
             bbox_coor = bbox[:4]
             bbox_class_ind = bbox[4]
@@ -311,7 +312,6 @@ class Dataset(object):
             uniform_distribution = np.full(
                 self.num_classes, 1.0 / self.num_classes
             )
-            deta = 0.01
             smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
 
             bbox_xywh = np.concatenate(
