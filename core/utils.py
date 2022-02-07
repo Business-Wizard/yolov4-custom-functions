@@ -87,16 +87,16 @@ def recognize_plate(img, coords):
 
 def load_freeze_layer(model='yolov4', tiny=False):
     if tiny:
-        if model == 'yolov3':
-            freeze_layouts = ['conv2d_9', 'conv2d_12']
-        else:
-            freeze_layouts = ['conv2d_17', 'conv2d_20']
+        return (
+            ['conv2d_9', 'conv2d_12']
+            if model == 'yolov3'
+            else ['conv2d_17', 'conv2d_20']
+        )
+
+    elif model == 'yolov3':
+        return ['conv2d_58', 'conv2d_66', 'conv2d_74']
     else:
-        if model == 'yolov3':
-            freeze_layouts = ['conv2d_58', 'conv2d_66', 'conv2d_74']
-        else:
-            freeze_layouts = ['conv2d_93', 'conv2d_101', 'conv2d_109']
-    return freeze_layouts
+        return ['conv2d_93', 'conv2d_101', 'conv2d_109']
 
 def load_weights(model, weights_file, model_name='yolov4', is_tiny=False):
     if is_tiny:
@@ -106,50 +106,46 @@ def load_weights(model, weights_file, model_name='yolov4', is_tiny=False):
         else:
             layer_size = 21
             output_pos = [17, 20]
+    elif model_name == 'yolov3':
+        layer_size = 75
+        output_pos = [58, 66, 74]
     else:
-        if model_name == 'yolov3':
-            layer_size = 75
-            output_pos = [58, 66, 74]
-        else:
-            layer_size = 110
-            output_pos = [93, 101, 109]
-    wf = open(weights_file, 'rb')
-    major, minor, revision, seen, _ = np.fromfile(wf, dtype=np.int32, count=5)
+        layer_size = 110
+        output_pos = [93, 101, 109]
+    with open(weights_file, 'rb') as wf:
+        major, minor, revision, seen, _ = np.fromfile(wf, dtype=np.int32, count=5)
 
-    j = 0
-    for i in range(layer_size):
-        conv_layer_name = 'conv2d_%d' %i if i > 0 else 'conv2d'
-        bn_layer_name = 'batch_normalization_%d' %j if j > 0 else 'batch_normalization'
+        j = 0
+        for i in range(layer_size):
+            conv_layer_name = 'conv2d_%d' %i if i > 0 else 'conv2d'
+            bn_layer_name = 'batch_normalization_%d' %j if j > 0 else 'batch_normalization'
 
-        conv_layer = model.get_layer(conv_layer_name)
-        filters = conv_layer.filters
-        k_size = conv_layer.kernel_size[0]
-        in_dim = conv_layer.input_shape[-1]
+            conv_layer = model.get_layer(conv_layer_name)
+            filters = conv_layer.filters
+            k_size = conv_layer.kernel_size[0]
+            in_dim = conv_layer.input_shape[-1]
 
-        if i not in output_pos:
-            # darknet weights: [beta, gamma, mean, variance]
-            bn_weights = np.fromfile(wf, dtype=np.float32, count=4 * filters)
-            # tf weights: [gamma, beta, mean, variance]
-            bn_weights = bn_weights.reshape((4, filters))[[1, 0, 2, 3]]
-            bn_layer = model.get_layer(bn_layer_name)
-            j += 1
-        else:
-            conv_bias = np.fromfile(wf, dtype=np.float32, count=filters)
+            if i not in output_pos:
+                # darknet weights: [beta, gamma, mean, variance]
+                bn_weights = np.fromfile(wf, dtype=np.float32, count=4 * filters)
+                # tf weights: [gamma, beta, mean, variance]
+                bn_weights = bn_weights.reshape((4, filters))[[1, 0, 2, 3]]
+                bn_layer = model.get_layer(bn_layer_name)
+                j += 1
+            else:
+                conv_bias = np.fromfile(wf, dtype=np.float32, count=filters)
 
-        # darknet shape (out_dim, in_dim, height, width)
-        conv_shape = (filters, in_dim, k_size, k_size)
-        conv_weights = np.fromfile(wf, dtype=np.float32, count=np.product(conv_shape))
-        # tf shape (height, width, in_dim, out_dim)
-        conv_weights = conv_weights.reshape(conv_shape).transpose([2, 3, 1, 0])
+            # darknet shape (out_dim, in_dim, height, width)
+            conv_shape = (filters, in_dim, k_size, k_size)
+            conv_weights = np.fromfile(wf, dtype=np.float32, count=np.product(conv_shape))
+            # tf shape (height, width, in_dim, out_dim)
+            conv_weights = conv_weights.reshape(conv_shape).transpose([2, 3, 1, 0])
 
-        if i not in output_pos:
-            conv_layer.set_weights([conv_weights])
-            bn_layer.set_weights(bn_weights)
-        else:
-            conv_layer.set_weights([conv_weights, conv_bias])
-
-    # assert len(wf.read()) == 0, 'failed to read all data'
-    wf.close()
+            if i not in output_pos:
+                conv_layer.set_weights([conv_weights])
+                bn_layer.set_weights(bn_weights)
+            else:
+                conv_layer.set_weights([conv_weights, conv_bias])
 
 
 def read_class_names(class_file_name):
@@ -177,10 +173,7 @@ def load_config(FLAGS):
 
 def get_anchors(anchors_path, tiny=False):
     anchors = np.array(anchors_path)
-    if tiny:
-        return anchors.reshape(2, 3, 2)
-    else:
-        return anchors.reshape(3, 3, 2)
+    return anchors.reshape(2, 3, 2) if tiny else anchors.reshape(3, 3, 2)
 
 def image_preprocess(image, target_size, gt_boxes=None):
     ih, iw    = target_size
@@ -198,10 +191,9 @@ def image_preprocess(image, target_size, gt_boxes=None):
     if gt_boxes is None:
         return image_paded
 
-    else:
-        gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
-        gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
-        return image_paded, gt_boxes
+    gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
+    gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
+    return image_paded, gt_boxes
 
 # helper function to convert bounding boxes from normalized ymin, xmin, ymax, xmax ---> xmin, ymin, xmax, ymax
 def format_boxes(bboxes, image_height, image_width):
@@ -229,44 +221,43 @@ def draw_bbox(image, bboxes, info = False, counted_classes = None, show_label=Tr
     for i in range(num_boxes):
         if int(out_classes[i]) < 0 or int(out_classes[i]) > num_classes: continue
         coor = out_boxes[i]
-        fontScale = 0.5
         score = out_scores[i]
         class_ind = int(out_classes[i])
         class_name = classes[class_ind]
         if class_name not in allowed_classes:
             continue
-        else:
-            if read_plate:
-                height_ratio = int(image_h / 25)
-                plate_number = recognize_plate(image, coor)
-                if plate_number != None:
-                    cv2.putText(image, plate_number, (int(coor[0]), int(coor[1]-height_ratio)), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.25, (255,255,0), 2)
+        if read_plate:
+            height_ratio = int(image_h / 25)
+            plate_number = recognize_plate(image, coor)
+            if plate_number != None:
+                cv2.putText(image, plate_number, (int(coor[0]), int(coor[1]-height_ratio)), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.25, (255,255,0), 2)
 
-            bbox_color = colors[class_ind]
-            bbox_thick = int(0.6 * (image_h + image_w) / 600)
-            c1, c2 = (coor[0], coor[1]), (coor[2], coor[3])
-            cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
+        bbox_color = colors[class_ind]
+        bbox_thick = int(0.6 * (image_h + image_w) / 600)
+        c1, c2 = (coor[0], coor[1]), (coor[2], coor[3])
+        cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
 
-            if info:
-                print("Object found: {}, Confidence: {:.2f}, BBox Coords (xmin, ymin, xmax, ymax): {}, {}, {}, {} ".format(class_name, score, coor[0], coor[1], coor[2], coor[3]))
+        if info:
+            print("Object found: {}, Confidence: {:.2f}, BBox Coords (xmin, ymin, xmax, ymax): {}, {}, {}, {} ".format(class_name, score, coor[0], coor[1], coor[2], coor[3]))
 
-            if show_label:
-                bbox_mess = '%s: %.2f' % (class_name, score)
-                t_size = cv2.getTextSize(bbox_mess, 0, fontScale, thickness=bbox_thick // 2)[0]
-                c3 = (c1[0] + t_size[0], c1[1] - t_size[1] - 3)
-                cv2.rectangle(image, c1, (np.float32(c3[0]), np.float32(c3[1])), bbox_color, -1) #filled
+        if show_label:
+            bbox_mess = '%s: %.2f' % (class_name, score)
+            fontScale = 0.5
+            t_size = cv2.getTextSize(bbox_mess, 0, fontScale, thickness=bbox_thick // 2)[0]
+            c3 = (c1[0] + t_size[0], c1[1] - t_size[1] - 3)
+            cv2.rectangle(image, c1, (np.float32(c3[0]), np.float32(c3[1])), bbox_color, -1) #filled
 
-                cv2.putText(image, bbox_mess, (c1[0], np.float32(c1[1] - 2)), cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale, (0, 0, 0), bbox_thick // 2, lineType=cv2.LINE_AA)
+            cv2.putText(image, bbox_mess, (c1[0], np.float32(c1[1] - 2)), cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale, (0, 0, 0), bbox_thick // 2, lineType=cv2.LINE_AA)
 
-            if counted_classes != None:
-                height_ratio = int(image_h / 25)
-                offset = 15
-                for key, value in counted_classes.items():
-                    cv2.putText(image, "{}s detected: {}".format(key, value), (5, offset),
-                            cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 2)
-                    offset += height_ratio
+        if counted_classes != None:
+            height_ratio = int(image_h / 25)
+            offset = 15
+            for key, value in counted_classes.items():
+                cv2.putText(image, "{}s detected: {}".format(key, value), (5, offset),
+                        cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 2)
+                offset += height_ratio
     return image
 
 def bbox_iou(bboxes1, bboxes2):
@@ -304,9 +295,7 @@ def bbox_iou(bboxes1, bboxes2):
 
     union_area = bboxes1_area + bboxes2_area - inter_area
 
-    iou = tf.math.divide_no_nan(inter_area, union_area)
-
-    return iou
+    return tf.math.divide_no_nan(inter_area, union_area)
 
 
 def bbox_giou(bboxes1, bboxes2):
@@ -355,9 +344,7 @@ def bbox_giou(bboxes1, bboxes2):
     enclose_section = enclose_right_down - enclose_left_up
     enclose_area = enclose_section[..., 0] * enclose_section[..., 1]
 
-    giou = iou - tf.math.divide_no_nan(enclose_area - union_area, enclose_area)
-
-    return giou
+    return iou - tf.math.divide_no_nan(enclose_area - union_area, enclose_area)
 
 
 def bbox_ciou(bboxes1, bboxes2):
@@ -428,9 +415,7 @@ def bbox_ciou(bboxes1, bboxes2):
 
     alpha = tf.math.divide_no_nan(v, 1 - iou + v)
 
-    ciou = diou - alpha * v
-
-    return ciou
+    return diou - alpha * v
 
 def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
     """

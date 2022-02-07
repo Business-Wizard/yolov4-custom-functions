@@ -15,16 +15,13 @@ from core.config import cfg
 # ANCHORS = utils.get_anchors(cfg.YOLO.ANCHORS)
 
 def YOLO(input_layer, NUM_CLASS, model='yolov4', is_tiny=False):
-    if is_tiny:
-        if model == 'yolov4':
+    if model == 'yolov4':
+        if is_tiny:
             return YOLOv4_tiny(input_layer, NUM_CLASS)
-        elif model == 'yolov3':
-            return YOLOv3_tiny(input_layer, NUM_CLASS)
-    else:
-        if model == 'yolov4':
+        else:
             return YOLOv4(input_layer, NUM_CLASS)
-        elif model == 'yolov3':
-            return YOLOv3(input_layer, NUM_CLASS)
+    elif model == 'yolov3':
+        return YOLOv3_tiny(input_layer, NUM_CLASS)
 
 def YOLOv3(input_layer, NUM_CLASS):
     route_1, route_2, conv = backbone.darknet53(input_layer)
